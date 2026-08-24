@@ -1,0 +1,19 @@
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+.venv/
+venv/
+env/
+
+.pytest_cache/
+
+output/*.pcap
+
+.vscode/
+
+*.log
+
+# Generated analysis output
+security_report.json
