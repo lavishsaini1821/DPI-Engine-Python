@@ -106,6 +106,14 @@ class ConnectionTracker:
         """
         return self.flows.get(five_tuple)
 
+    def is_packet_blocked(self, packet_data) -> bool:
+        """
+        Return True when the packet belongs to a blocked flow.
+        """
+
+        flow = self.get_flow(self.create_five_tuple(packet_data))
+        return bool(flow and flow.blocked)
+
     def get_flow_count(self) -> int:
         """
         Return the number of tracked flows.

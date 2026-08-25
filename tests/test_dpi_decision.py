@@ -19,7 +19,7 @@ normal_packet = (
 # Create a Scapy packet from a blocked source IP.
 blocked_packet = (
     IP(
-        src="192.168.1.100",
+        src="10.0.0.50",
         dst="8.8.8.8"
     )
     / TCP(

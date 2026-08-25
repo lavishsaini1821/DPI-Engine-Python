@@ -10,11 +10,15 @@ class DPIProcessor:
     existing V1 DPI processing pipeline.
     """
 
-    def __init__(self):
+    def __init__(self,blocked_ips=None,blocked_apps=None,blocked_domains=None,):
 
         # V1 components reused by the V2 processing pipeline.
         self.parser = PacketParser()
-        self.connection_tracker = ConnectionTracker()
+        self.connection_tracker = ConnectionTracker(
+            blocked_ips=blocked_ips,
+            blocked_apps=blocked_apps,
+            blocked_domains=blocked_domains,
+        )
         self.sni_extractor = SNIExtractor()
         self.http_host_extractor = HTTPHostExtractor()
 

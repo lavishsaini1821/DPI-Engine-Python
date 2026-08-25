@@ -2,7 +2,9 @@ from src.pcap_reader import PcapReader
 from src.packet_parser import PacketParser
 from src.analyzer import PacketAnalyzer
 from src.connection_tracker import ConnectionTracker
+from src.types import AppType
 from src.v2.pipeline import V2Pipeline
+from scapy.all import wrpcap
 import argparse
 import json
 
@@ -16,6 +18,19 @@ def parse_arguments():
 
     # Allow the user to specify the input PCAP file.
     parser.add_argument("--input", default="input/test_dpi.pcap", help="Path to the input PCAP file.",)
+
+    # Allow the user to specify where the filtered PCAP is written.
+    parser.add_argument("--output", default="output/v2_filtered_output.pcap", help="Path to the filtered output PCAP file.",)
+    parser.add_argument("--v1-output", default="output/v1_filtered_output.pcap", help="Path to the V1 filtered output PCAP file.",)
+
+    # Number of worker threads used by the V2 pipeline.
+    parser.add_argument("--workers", type=int, default=4, help="Number of V2 worker threads.",)
+
+    # Blocking rules. Repeat a flag to pass more than one value.
+    # When a flag is not used, the built-in default rules apply.
+    parser.add_argument("--block-ip", action="append", help="Block a source IP. Repeatable.",)
+    parser.add_argument("--block-domain", action="append", help="Block a domain. Repeatable.",)
+    parser.add_argument("--block-app", action="append", help="Block an app, e.g. FACEBOOK. Repeatable.",)
     return parser.parse_args()
 
 def main():
@@ -41,8 +56,15 @@ def main():
 
     print(f"Successfully parsed {len(parsed_packets)} packets.")
 
+    # Convert application names from the CLI into AppType values.
+    blocked_apps = ([AppType(name.strip().upper()) for name in args.block_app] if args.block_app else None)
+
     # Create the connection Tracker object
-    connection_tracker = ConnectionTracker()
+    connection_tracker = ConnectionTracker(
+        blocked_ips=args.block_ip,
+        blocked_apps=blocked_apps,
+        blocked_domains=args.block_domain,
+    )
 
     # Create the analyzer object.
     analyzer = PacketAnalyzer(connection_tracker)
@@ -69,7 +91,7 @@ def main():
     print("\nProtocol Statistics:")
 
     for protocol, count in protocol_statistics.items():
-        print(f"{protocol}: {count}")
+        print(f"{protocol}: {count} ({count / len(parsed_packets) * 100:.1f}%)")
 
     # Display the number of unique source IP addresses.
     print("\nUnique Source IPs:")
@@ -180,6 +202,11 @@ def main():
 
     print("\nSecurity report saved as security_report.json")
 
+    # Write the packets that V1 allowed to pass.
+    wrpcap(args.v1_output, [packet for packet, parsed in zip(packets, parsed_packets) if not connection_tracker.is_packet_blocked(parsed)])
+
+    print(f"V1 filtered PCAP saved as {args.v1_output}")
+
     # ==========================================
     # V2 MULTI-THREADED DPI PIPELINE
     # ==========================================
@@ -191,30 +218,27 @@ def main():
 
     v2_pipeline = V2Pipeline(
         file_path=args.input,
-        output_path="output/v2_filtered_output.pcap",
-        worker_count=4,
+        output_path=args.output,
+        worker_count=args.workers,
+        blocked_ips=args.block_ip,
+        blocked_apps=blocked_apps,
+        blocked_domains=args.block_domain,
     )
 
     v2_stats, v2_results, v2_application_stats = v2_pipeline.run()
-    v2_total_processed = len(v2_results)
-    v2_forwarded = sum(
-        1
-        for result in v2_results
-        if result["decision"] == "FORWARD"
-    )
 
-    v2_dropped = sum(
-        1
-        for result in v2_results
-        if result["decision"] == "DROP"
-    )
+    # The pipeline already counted all of this while building its report.
+    v2_report = v2_pipeline.get_report()
 
     print("\nV2 DPI REPORT")
     print("==========================================")
 
-    print(f"Total Processed : {v2_total_processed}")
-    print(f"Forwarded       : {v2_forwarded}")
-    print(f"Dropped         : {v2_dropped}")
+    print(f"Total Processed : {v2_report['total_packets']}")
+    print(f"Forwarded       : {v2_report['forwarded']}")
+    print(f"Dropped         : {v2_report['dropped']}")
+    print(f"Skipped Non-IP  : {v2_report['skipped']}")
+    print(f"Total Flows     : {v2_report['total_flows']}")
+    print(f"Worker Errors   : {sum(v2_report['errors'].values())}")
 
     print("\nApplication Statistics")
     print("------------------------------------------")
@@ -230,10 +254,7 @@ def main():
 
     print("\nOutput")
     print("------------------------------------------")
-    print(
-        "Filtered PCAP   : "
-        "output/v2_filtered_output.pcap"
-    )
+    print(f"Filtered PCAP   : {args.output}")
 
     print("\n==========================================")
     print("       V2 PIPELINE COMPLETED")

@@ -11,10 +11,15 @@ class V2Pipeline:
     """
     Runs the DPI processor using multiple workers.
     """
-    def __init__(self,file_path,output_path="output/v2_filtered_output.pcap",worker_count=4,):
+    def __init__(self,file_path,output_path="output/v2_filtered_output.pcap",worker_count=4,blocked_ips=None,blocked_apps=None,blocked_domains=None,):
 
         self.reader = PcapReader(file_path)
         self.output_path = output_path
+
+        # Blocking rules passed to every per-worker DPIProcessor.
+        self.blocked_ips = blocked_ips
+        self.blocked_apps = blocked_apps
+        self.blocked_domains = blocked_domains
 
         # PacketParser holds no state, so one shared instance is safe.
         # It is used here only to build the FlowKey for balancing.
@@ -34,7 +39,11 @@ class V2Pipeline:
     def _create_processor(self):
         """Create a per-worker DPI processor and keep a handle on it."""
 
-        processor = DPIProcessor()
+        processor = DPIProcessor(
+            blocked_ips=self.blocked_ips,
+            blocked_apps=self.blocked_apps,
+            blocked_domains=self.blocked_domains,
+        )
         self.processors.append(processor)
 
         return processor.process
