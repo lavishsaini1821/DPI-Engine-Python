@@ -202,6 +202,48 @@ Packet_Analyzer_Python/
 
 Let's trace a single packet through `src/dpi_engine.py`.
 
+```
+   input/test_dpi.pcap
+               │
+               ▼
+  ┌──────────────────────────┐
+  │ 1  PcapReader            │  rdpcap() → whole capture in memory
+  └────────────┬─────────────┘
+               ▼
+  ┌──────────────────────────┐
+  │ 2  PacketParser          │  Scapy layers → plain dict
+  └────────────┬─────────────┘
+               ▼
+  ┌──────────────────────────┐
+  │ 3  create_five_tuple     │  no IP layer → None → packet skipped
+  └────────────┬─────────────┘
+               ▼
+  ┌──────────────────────────┐
+  │ 4  SNIExtractor          │  TLS Client Hello → "www.facebook.com"
+  │    HTTPHostExtractor     │  plaintext HTTP   → Host: header
+  └────────────┬─────────────┘
+               ▼
+  ┌──────────────────────────┐
+  │ 5  ConnectionTracker     │  ← the only stateful step
+  │    get_or_create_flow    │    flow table:  FiveTuple → Flow
+  │    ├ classify_domain     │    RuleManager → flow.app_type
+  │    └ apply_blocking_rules│    RuleManager → flow.blocked
+  └────────────┬─────────────┘
+               ▼
+  ┌──────────────────────────┐
+  │ 6  decision              │  flow.blocked ? DROP : FORWARD
+  └────────────┬─────────────┘
+               ▼
+  ┌──────────────────────────┐
+  │ 7  Analyzer + wrpcap     │  second pass over all packets
+  └────────────┬─────────────┘
+               ▼
+   security_report.json
+   output/v1_filtered_output.pcap
+```
+
+Steps 1-7 below walk through each box.
+
 ### Step 1: Read PCAP File
 
 ```python
@@ -511,27 +553,27 @@ The multi-threaded version (`src/v2/pipeline.py`) adds **concurrency** on top of
                     │ crc32(5-tuple) % N  │
                     └──────────┬──────────┘
                                │
-        ┌──────────┬───────────┼───────────┬──────────┐
-        ▼          ▼           ▼           ▼          ▼
-   ┌────────┐ ┌────────┐  ┌────────┐  ┌────────┐
-   │ Queue0 │ │ Queue1 │  │ Queue2 │  │ Queue3 │   ← one queue PER worker
-   └───┬────┘ └───┬────┘  └───┬────┘  └───┬────┘
-       │          │           │           │
-       ▼          ▼           ▼           ▼
-   ┌────────┐ ┌────────┐  ┌────────┐  ┌────────┐
-   │Worker 0│ │Worker 1│  │Worker 2│  │Worker 3│   ← DPIWorker threads
-   │  own   │ │  own   │  │  own   │  │  own   │
-   │  flow  │ │  flow  │  │  flow  │  │  flow  │
-   │  table │ │  table │  │  table │  │  table │
-   └───┬────┘ └───┬────┘  └───┬────┘  └───┬────┘
-       │          │           │           │
-       └──────────┴─────┬─────┴───────────┘
-                        │
-                        ▼
-            ┌───────────────────────┐
-            │  collect results      │
-            │  wrpcap(forwarded)    │
-            └───────────────────────┘
+             ┌───────────┬─────┴─────┬───────────┐
+             ▼           ▼           ▼           ▼
+         ┌────────┐  ┌────────┐  ┌────────┐  ┌────────┐
+         │ Queue0 │  │ Queue1 │  │ Queue2 │  │ Queue3 │   ← one queue PER worker
+         └───┬────┘  └───┬────┘  └───┬────┘  └───┬────┘
+             │           │           │           │
+             ▼           ▼           ▼           ▼
+         ┌────────┐  ┌────────┐  ┌────────┐  ┌────────┐
+         │Worker 0│  │Worker 1│  │Worker 2│  │Worker 3│   ← DPIWorker threads
+         │  own   │  │  own   │  │  own   │  │  own   │
+         │  flow  │  │  flow  │  │  flow  │  │  flow  │
+         │  table │  │  table │  │  table │  │  table │
+         └───┬────┘  └───┬────┘  └───┬────┘  └───┬────┘
+             │           │           │           │
+             └───────────┴─────┬─────┴───────────┘
+                               │
+                               ▼
+                   ┌───────────────────────┐
+                   │  collect results      │
+                   │  wrpcap(forwarded)    │
+                   └───────────────────────┘
 ```
 
 ### Why This Design?
