@@ -115,6 +115,13 @@ class RuleManager:
         for blocked_domain in self.blocked_domains:
             blocked_domain = (blocked_domain.lower().strip().rstrip("."))
 
+            # A rule without a dot ("facebook") is treated as a domain label.
+            # This blocks "www.facebook.com" but not "notfacebook.com".
+            if "." not in blocked_domain:
+                if blocked_domain in domain.split("."):
+                    return True
+                continue
+
             if (domain == blocked_domain or domain.endswith("." + blocked_domain)):
                 return True
         return False

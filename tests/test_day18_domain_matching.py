@@ -58,6 +58,35 @@ for domain, expected in blocking_tests:
         all_passed = False
 
 
+print("\nLabel rule tests:")
+
+# A rule without a dot is matched label by label.
+label_rules = RuleManager(blocked_domains={"facebook"})
+
+label_tests = [
+    ("www.facebook.com", True),
+    ("facebook.co.uk", True),
+    ("facebook", True),
+    ("notfacebook.com", False),
+    ("facebooking.com", False),
+]
+
+
+for domain, expected in label_tests:
+    result = label_rules.is_domain_blocked(domain)
+
+    passed = result == expected
+
+    print(
+        f"{domain} -> Blocked: {result} | "
+        f"Expected: {expected} | "
+        f"{'PASS' if passed else 'FAIL'}"
+    )
+
+    if not passed:
+        all_passed = False
+
+
 print("\nVerification:")
 
 if all_passed:
