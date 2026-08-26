@@ -95,5 +95,3 @@ else:
     print("Domain matching: FAIL")
 
 assert all_passed
-
-assert all_passed
