@@ -93,3 +93,7 @@ if all_passed:
     print("Domain matching: PASS")
 else:
     print("Domain matching: FAIL")
+
+assert all_passed
+
+assert all_passed

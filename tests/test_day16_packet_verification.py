@@ -41,7 +41,13 @@ dropped_packets = input_packet_bytes - output_packet_bytes
 
 print(f"Packets removed from output: {sum(dropped_packets.values())}")
 
-if sum(dropped_packets.values()) == 1:
+dropped_pass = sum(dropped_packets.values()) == 1
+
+if dropped_pass:
     print("Dropped packets excluded: PASS")
 else:
     print("Dropped packets excluded: FAIL")
+
+
+assert output_packets_valid
+assert dropped_pass

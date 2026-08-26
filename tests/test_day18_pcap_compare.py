@@ -89,3 +89,8 @@ if preserved_pass and removed_pass and count_pass:
     print("\nPCAP comparison: PASS")
 else:
     print("\nPCAP comparison: FAIL")
+
+
+assert preserved_pass
+assert removed_pass
+assert count_pass

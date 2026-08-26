@@ -173,3 +173,5 @@ if all_passed:
     print("V1 integration test: PASS")
 else:
     print("V1 integration test: FAIL")
+
+assert all_passed

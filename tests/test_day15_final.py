@@ -62,29 +62,17 @@ print("DROP:", drop_count)
 # Final verification checks.
 print("\nVerification:")
 
-print(
-    "Packet parsing:",
-    "PASS" if len(packets) == len(parsed_packets)
-    else "FAIL"
-)
+parsing_pass = len(packets) == len(parsed_packets)
+flow_pass = engine.connection_tracker.get_flow_count() > 0
+sni_pass = len(sni_flows) > 0
+enforcement_pass = len(decisions) == len(packets)
 
-print(
-    "Flow tracking:",
-    "PASS"
-    if engine.connection_tracker.get_flow_count() > 0
-    else "FAIL"
-)
+print("Packet parsing:", "PASS" if parsing_pass else "FAIL")
+print("Flow tracking:", "PASS" if flow_pass else "FAIL")
+print("SNI extraction:", "PASS" if sni_pass else "FAIL")
+print("Enforcement:", "PASS" if enforcement_pass else "FAIL")
 
-print(
-    "SNI extraction:",
-    "PASS"
-    if len(sni_flows) > 0
-    else "FAIL"
-)
-
-print(
-    "Enforcement:",
-    "PASS"
-    if len(decisions) == len(packets)
-    else "FAIL"
-)
+assert parsing_pass
+assert flow_pass
+assert sni_pass
+assert enforcement_pass

@@ -28,3 +28,5 @@ if len(report) == 16:
     print("SNI/application report: PASS")
 else:
     print("SNI/application report: FAIL")
+
+assert len(report) == 16

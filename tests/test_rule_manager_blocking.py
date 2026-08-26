@@ -6,7 +6,7 @@ rules = RuleManager()
 
 # Test source IP blocking.
 print("IP blocked:",
-      rules.is_ip_blocked("192.168.1.100"))
+      rules.is_ip_blocked("10.0.0.50"))
 
 print("IP allowed:",
       rules.is_ip_blocked("192.168.1.10"))
@@ -24,3 +24,13 @@ print("Domain blocked:",
 
 print("Domain allowed:",
       rules.is_domain_blocked("google.com"))
+
+
+# Each rule must both block what it should and allow what it should,
+# so that a rule which silently matches nothing cannot pass.
+assert rules.is_ip_blocked("10.0.0.50") is True
+assert rules.is_ip_blocked("192.168.1.10") is False
+assert rules.is_app_blocked(AppType.FACEBOOK) is True
+assert rules.is_app_blocked(AppType.YOUTUBE) is False
+assert rules.is_domain_blocked("phishing.com") is True
+assert rules.is_domain_blocked("google.com") is False

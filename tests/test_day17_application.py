@@ -25,4 +25,5 @@ if engine.analyzer.application_count:
     print("Application breakdown: PASS")
 else:
     print("Application breakdown: FAIL")
-    
+
+assert engine.analyzer.application_count

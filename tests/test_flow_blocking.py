@@ -29,7 +29,7 @@ print("Normal flow blocked:", flow.blocked)
 # -------------------------------------------------
 
 blocked_ip_flow = FiveTuple(
-    src_ip="192.168.1.100",
+    src_ip="10.0.0.50",
     dst_ip="8.8.8.8",
     src_port=5001,
     dst_port=443,
@@ -90,3 +90,12 @@ flow_again = tracker.get_or_create_flow(
     sni=None
 )
 print("Same flow remains blocked:", flow_again.blocked)
+
+
+# Each of the three blocking rules must be exercised, and a flow that
+# was already blocked must stay blocked when its SNI is absent.
+assert tracker.flows[normal_flow].blocked is False
+assert tracker.flows[blocked_ip_flow].blocked is True
+assert tracker.flows[blocked_app_flow].blocked is True
+assert tracker.flows[blocked_domain_flow].blocked is True
+assert flow_again.blocked is True

@@ -22,3 +22,5 @@ if engine.analyzer.total_bytes > 0:
     print("Total bytes calculation: PASS")
 else:
     print("Total bytes calculation: FAIL")
+
+assert engine.analyzer.total_bytes == 5738

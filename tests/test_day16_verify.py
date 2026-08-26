@@ -27,14 +27,22 @@ print(f"Dropped packets: {dropped_count}")
 
 # Verify that the output contains fewer packets than
 # the original because at least one packet was dropped.
-if output_count < input_count:
+filtering_pass = output_count < input_count
+
+if filtering_pass:
     print("Output filtering: PASS")
 else:
     print("Output filtering: FAIL")
 
 
 # Verify the expected V1 result.
-if output_count == 76 and dropped_count == 1:
+count_pass = output_count == 76 and dropped_count == 1
+
+if count_pass:
     print("Packet count verification: PASS")
 else:
     print("Packet count verification: FAIL")
+
+
+assert filtering_pass
+assert count_pass

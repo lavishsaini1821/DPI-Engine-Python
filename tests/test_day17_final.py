@@ -73,32 +73,27 @@ print(f"DROP: {drop_count}")
 
 print("\nVerification:")
 
-# Verify total bytes.
-if analyzer.total_bytes == 5738:
-    print("Total bytes: PASS")
-else:
-    print("Total bytes: FAIL")
+bytes_pass = analyzer.total_bytes == 5738
 
-# Verify application statistics.
-if (
+application_pass = (
     analyzer.application_count.get("FACEBOOK") == 1
     and analyzer.application_count.get("GOOGLE") == 1
     and analyzer.application_count.get("YOUTUBE") == 1
     and analyzer.application_count.get("GITHUB") == 1
     and sum(analyzer.application_count.values()) == 43
-):
-    print("Application breakdown: PASS")
-else:
-    print("Application breakdown: FAIL")
+)
 
-# Verify SNI report.
-if len(analyzer.sni_application_report) == 16:
-    print("SNI/application report: PASS")
-else:
-    print("SNI/application report: FAIL")
+sni_pass = len(analyzer.sni_application_report) == 16
 
-# Verify enforcement.
-if forward_count == 76 and drop_count == 1:
-    print("Enforcement: PASS")
-else:
-    print("Enforcement: FAIL")
+enforcement_pass = forward_count == 76 and drop_count == 1
+
+
+print("Total bytes:", "PASS" if bytes_pass else "FAIL")
+print("Application breakdown:", "PASS" if application_pass else "FAIL")
+print("SNI/application report:", "PASS" if sni_pass else "FAIL")
+print("Enforcement:", "PASS" if enforcement_pass else "FAIL")
+
+assert bytes_pass
+assert application_pass
+assert sni_pass
+assert enforcement_pass
