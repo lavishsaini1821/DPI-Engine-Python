@@ -1,0 +1,19 @@
+# Dockerfile.airflow
+# Airflow 2.10.0 with the exact providers required by the DPI DAG
+FROM apache/airflow:2.10.0-python3.12
+
+# Install runtime deps for psycopg2
+USER root
+RUN apt-get update && apt-get install -y --no-install-recommends libpq5 && \
+    rm -rf /var/lib/apt/lists/*
+USER airflow
+
+# Install exact providers compatible with Airflow 2.10.0 and constraints
+RUN pip install --no-cache-dir \
+    "apache-airflow-providers-postgres==5.11.3" \
+    "apache-airflow-providers-apache-kafka==1.5.0" \
+    -c "https://raw.githubusercontent.com/apache/airflow/constraints-2.10.0/constraints-3.12.txt"
+
+# Copy DAG files into the image to avoid Windows file-sharing I/O errors
+COPY src/data_engineering/ /opt/airflow/dags/
+RUN pip install --no-cache-dir scapy -c "https://raw.githubusercontent.com/apache/airflow/constraints-2.10.0/constraints-3.12.txt"

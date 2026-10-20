@@ -1,2 +1,7 @@
 scapy
 pytest
+pyarrow
+pyspark
+psycopg2-binary
+kafka-python
+apache-airflow

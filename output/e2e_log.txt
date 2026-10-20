@@ -1,0 +1,230 @@
+WARNING: No libpcap provider available ! pcap won't be used
+C:\Users\lavish saini\AppData\Local\Programs\Python\Python314\Lib\site-packages\scapy\layers\tls\crypto\groups.py:25: CryptographyDeprecationWarning: Diffie-Hellman over finite fields (FFDH) is deprecated and support will be removed in a future release. Use a more modern key exchange algorithm.
+  from cryptography.hazmat.primitives.asymmetric.dh import DHParameterNumbers
+Python DPI Engine
+Successfully parsed 77 packets.
+
+Application / Flow Statistics
+-----------------------------------
+www.google.com            -> GOOGLE     -> FORWARD
+www.youtube.com           -> YOUTUBE    -> FORWARD
+www.facebook.com          -> FACEBOOK   -> DROP
+www.instagram.com         -> INSTAGRAM  -> FORWARD
+twitter.com               -> TWITTER    -> FORWARD
+www.amazon.com            -> AMAZON     -> FORWARD
+www.netflix.com           -> NETFLIX    -> FORWARD
+github.com                -> GITHUB     -> FORWARD
+discord.com               -> DISCORD    -> FORWARD
+zoom.us                   -> ZOOM       -> FORWARD
+web.telegram.org          -> TELEGRAM   -> FORWARD
+www.tiktok.com            -> TIKTOK     -> FORWARD
+open.spotify.com          -> SPOTIFY    -> FORWARD
+www.cloudflare.com        -> CLOUDFLARE -> FORWARD
+www.microsoft.com         -> MICROSOFT  -> FORWARD
+www.apple.com             -> APPLE      -> FORWARD
+
+Application Statistics
+-----------------------------------
+GOOGLE         : 1
+UNKNOWN        : 27
+YOUTUBE        : 1
+FACEBOOK       : 1
+INSTAGRAM      : 1
+TWITTER        : 1
+AMAZON         : 1
+NETFLIX        : 1
+GITHUB         : 1
+DISCORD        : 1
+ZOOM           : 1
+TELEGRAM       : 1
+TIKTOK         : 1
+SPOTIFY        : 1
+CLOUDFLARE     : 1
+MICROSOFT      : 1
+APPLE          : 1
+
+Protocol Statistics:
+TCP: 73 (94.8%)
+UDP: 4 (5.2%)
+ICMP: 0 (0.0%)
+
+Unique Source IPs:
+18
+
+Source IP Packet Count:
+192.168.1.100: 56 packets
+142.250.185.206: 1 packets
+142.250.185.110: 1 packets
+157.240.1.35: 1 packets
+157.240.1.174: 1 packets
+104.244.42.65: 1 packets
+52.94.236.248: 1 packets
+23.52.167.61: 1 packets
+140.82.114.4: 1 packets
+104.16.85.20: 1 packets
+35.186.224.25: 1 packets
+35.186.227.140: 1 packets
+99.86.0.100: 1 packets
+35.186.224.47: 1 packets
+192.0.78.24: 1 packets
+13.107.42.14: 1 packets
+17.253.144.10: 1 packets
+192.168.1.50: 5 packets
+
+Destination Port Statistics:
+Port 443: 53 packets
+Port 54552: 1 packets
+Port 58867: 1 packets
+Port 64044: 1 packets
+Port 58747: 1 packets
+Port 59993: 1 packets
+Port 63093: 1 packets
+Port 50684: 1 packets
+Port 55490: 1 packets
+Port 54566: 1 packets
+Port 49582: 1 packets
+Port 52879: 1 packets
+Port 63971: 1 packets
+Port 51883: 1 packets
+Port 52439: 1 packets
+Port 57103: 1 packets
+Port 56170: 1 packets
+Port 80: 4 packets
+Port 53: 4 packets
+
+Service Statistics:
+HTTPS: 53 packets
+HTTP: 4 packets
+DNS: 4 packets
+
+Top Service:
+HTTPS
+
+HTTP Packet Statistics:
+HTTP Packets: 2
+HTTPS Packets: 53
+TLS Handshakes: 16
+
+HTTP Response Statistics:
+HTTP Responses: 0
+
+HTTP Method Statistics:
+GET: 2
+POST: 0
+
+HTTP Hosts:
+example.com
+httpbin.org
+
+Top HTTP Hosts:
+example.com: 1
+httpbin.org: 1
+
+HTTP User Agents:
+DPI-Test/1.0
+DPI-Test/1.0
+
+Top User Agents:
+DPI-Test/1.0: 2
+
+HTTP Requested Paths:
+/
+/
+
+SNI Domains:
+www.google.com
+www.youtube.com
+www.facebook.com
+www.instagram.com
+twitter.com
+www.amazon.com
+www.netflix.com
+github.com
+discord.com
+zoom.us
+web.telegram.org
+www.tiktok.com
+open.spotify.com
+www.cloudflare.com
+www.microsoft.com
+www.apple.com
+
+========== SECURITY REPORT ==========
+Total SNI Domains : 16
+Suspicious Domains Found : 0
+
+Detected Suspicious Domains : None Found
+Risk Level : LOW
+
+First Parsed Packet:
+{'packet_length': 54, 'src_ip': '192.168.1.100', 'dst_ip': '142.250.185.206', 'protocol': 'TCP', 'src_port': 54552, 'dst_port': 443, 'payload': b''}
+
+Security report saved as security_report.json
+V1 filtered PCAP saved as output/v1_filtered_output.pcap
+
+Parquet events written: output/network_events.parquet (77 events)
+Java not found and JAVA_HOME environment variable is not set.
+Install Java and set JAVA_HOME to point to the Java installation directory.
+
+PySpark ETL skipped: [JAVA_GATEWAY_EXITED] Java gateway process exited before sending its port number.. (Need Java to run Spark.)
+
+PostgresSink skipped: connection to server at "localhost" (::1), port 5432 failed: Connection refused (0x0000274D/10061)
+	Is the server running on that host and accepting TCP/IP connections?
+connection to server at "localhost" (127.0.0.1), port 5432 failed: Connection refused (0x0000274D/10061)
+	Is the server running on that host and accepting TCP/IP connections?
+. (Need PostgreSQL server running.)
+C:\Users\lavish saini\Projects\Packet_Analyzer_Python\main.py:265: DeprecationWarning: value_serializer does not implement kafka.serializer.Serializer
+  if KafkaSink().publish(events, topic="network_events"):
+
+KafkaSink skipped: KafkaTimeoutError: Unable to bootstrap from localhost:9092. (Need Kafka broker running.)
+C:\Users\lavish saini\AppData\Local\Programs\Python\Python314\Lib\site-packages\airflow\__init__.py:47: RuntimeWarning: Airflow currently can be run on POSIX-compliant Operating Systems. For development, it is regularly tested on fairly modern Linux Distros and recent versions of macOS. On Windows you can run it via WSL2 (Windows Subsystem for Linux 2) or via Linux Containers. The work to add Windows support is tracked via https://github.com/apache/airflow/issues/10388, but it is not a high priority.
+  warnings.warn(
+
+
+==========================================
+       V2 MULTI-THREADED DPI ENGINE
+==========================================
+
+V2 DPI REPORT
+==========================================
+Total Processed : 77
+Forwarded       : 76
+Dropped         : 1
+Skipped Non-IP  : 0
+Total Flows     : 43
+Worker Errors   : 0
+
+Application Statistics
+------------------------------------------
+NETFLIX        : 3
+UNKNOWN        : 29
+YOUTUBE        : 3
+FACEBOOK       : 3
+TWITTER        : 3
+GITHUB         : 3
+DISCORD        : 3
+SPOTIFY        : 3
+MICROSOFT      : 3
+APPLE          : 3
+GOOGLE         : 3
+INSTAGRAM      : 3
+TELEGRAM       : 3
+CLOUDFLARE     : 3
+AMAZON         : 3
+ZOOM           : 3
+TIKTOK         : 3
+
+Worker Statistics
+------------------------------------------
+Worker 0        : 7 packets
+Worker 1        : 37 packets
+Worker 2        : 18 packets
+Worker 3        : 15 packets
+
+Output
+------------------------------------------
+Filtered PCAP   : output/v2_filtered_output.pcap
+
+==========================================
+       V2 PIPELINE COMPLETED
+==========================================

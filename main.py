@@ -1,9 +1,11 @@
+import os
 from src.pcap_reader import PcapReader
 from src.packet_parser import PacketParser
 from src.analyzer import PacketAnalyzer
 from src.connection_tracker import ConnectionTracker
 from src.types import AppType
 from src.v2.pipeline import V2Pipeline
+from src.live_capture import LivePacketCapture
 from scapy.all import wrpcap
 import argparse
 import json
@@ -31,6 +33,16 @@ def parse_arguments():
     parser.add_argument("--block-ip", action="append", help="Block a source IP. Repeatable.",)
     parser.add_argument("--block-domain", action="append", help="Block a domain. Repeatable.",)
     parser.add_argument("--block-app", action="append", help="Block an app, e.g. FACEBOOK. Repeatable.",)
+
+    # Live capture mode: capture packets live via Npcap/Scapy instead of
+    # reading from a PCAP file. The offline/PCAP path is unchanged when
+    # --live is not used.
+    parser.add_argument("--live", action="store_true", help="Capture packets live via Npcap/Scapy instead of reading from a PCAP file.",)
+    parser.add_argument("--interface", default=None, help="Network interface for live capture (name, index, or NDIS device path).",)
+    parser.add_argument("--timeout", type=int, default=10, help="Seconds to sniff in live mode (0 = no timeout).",)
+    parser.add_argument("--filter", default=None, help="BPF expression for live capture, e.g. 'tcp and port 443'.",)
+    parser.add_argument("--stop-after", type=int, default=None, help="Capture this many packets then stop in live mode.",)
+    parser.add_argument("--pcap-save", default=None, help="Save captured live packets to this PCAP path.",)
     return parser.parse_args()
 
 def main():
@@ -39,9 +51,45 @@ def main():
 
     print("Python DPI Engine")
 
-    # Load packets from the selected PCAP file.
-    reader = PcapReader(args.input)
-    packets = reader.read_packets()
+    # Load packets: live capture mode or offline PCAP mode.
+    if args.live:
+        # Live capture via Npcap/Scapy
+        print("Starting live packet capture...")
+        capture = LivePacketCapture(
+            interface=args.interface,
+            promiscuous=True,  # default, could be made configurable
+            timeout=args.timeout,
+            filter=args.filter,
+            stop_after=args.stop_after,
+            pcap_save=args.pcap_save,
+        )
+        packets = capture.sniff()
+
+        # Warn if live capture fell back to PCAP/Parquet replay
+        if args.pcap_save is None and len(packets) > 0:
+            print(f"Captured {len(packets)} packets via live capture.")
+        elif args.pcap_save is not None:
+            print(f"Captured {len(packets)} packets (saved to {args.pcap_save}).")
+        else:
+            print("Warning: No packets captured in live mode.")
+
+        # For V2Pipeline, write captured packets to a temporary PCAP
+        import tempfile
+        temp_pcap_fd, temp_pcap_path = tempfile.mkstemp(suffix='.pcap', prefix='dpi_live_')
+        os.close(temp_pcap_fd)  # Close the file descriptor, we'll write via wrpcap
+        try:
+            wrpcap(temp_pcap_path, packets)
+            v2_input_path = temp_pcap_path
+            print(f"Live packets written to temporary PCAP: {v2_input_path}")
+        except Exception as e:
+            print(f"Warning: Could not write temporary PCAP for V2 pipeline: {e}")
+            v2_input_path = args.input  # Fallback to original input (may cause issues)
+    else:
+        # Offline PCAP mode (original behavior)
+        print(f"Reading packets from PCAP file: {args.input}")
+        reader = PcapReader(args.input)
+        packets = reader.read_packets()
+        v2_input_path = args.input
 
     # Create a parser to extract useful information from each packet.
     parser = PacketParser()
@@ -54,7 +102,7 @@ def main():
         parsed_packet = parser.parse(packet)
         parsed_packets.append(parsed_packet)
 
-    print(f"Successfully parsed {len(parsed_packets)} packets.")
+    print(f"Successfully processed {len(parsed_packets)} packets.")
 
     # Convert application names from the CLI into AppType values.
     blocked_apps = ([AppType(name.strip().upper()) for name in args.block_app] if args.block_app else None)
@@ -207,7 +255,79 @@ def main():
 
     print(f"V1 filtered PCAP saved as {args.v1_output}")
 
-    # ==========================================
+    # ============================================================
+    # Data Engineering Phases 1-5
+    # ============================================================
+    # Phase 1: Parquet — emit structured events to columnar storage.
+    # Guarded so the DPI pipeline still runs when pyarrow is missing.
+    events = []
+    try:
+        from src.data_engineering.emitter import NetworkEventEmitter
+        from src.data_engineering.parquet_sink import ParquetSink
+
+        decisions = [
+            "DROP" if connection_tracker.is_packet_blocked(p) else "FORWARD"
+            for p in parsed_packets
+        ]
+        events = NetworkEventEmitter(
+            parsed_packets, decisions, connection_tracker
+        ).emit_all()
+        parquet_path = "output/network_events.parquet"
+        ParquetSink().write(events, parquet_path)
+        print(f"\nParquet events written: {parquet_path} ({len(events)} events)")
+    except ImportError:
+        pass  # DE layer not installed — DPI output is unaffected
+
+    # Phase 2: PySpark ETL — transform Parquet events with Spark.
+    # Guarded so the DPI pipeline still runs when pyspark/Java is missing.
+    try:
+        from src.data_engineering.pyspark_etl import NetworkEventETL
+
+        etl = NetworkEventETL()
+        etl.run(
+            input_path="output/network_events.parquet",
+            output_path="output/pyspark_etl_output"
+        )
+    except ImportError:
+        pass  # ETL layer not installed — DPI + Phase 1 unaffected
+
+    # Phase 3: PostgreSQL — persist structured events to a relational DB.
+    # Guarded so the DPI pipeline still runs when psycopg2 is missing.
+    try:
+        from src.data_engineering.postgres_sink import PostgresSink
+
+        if os.getenv('DPI_SKIP_EXTERNAL_SINKS') != '1':
+            PostgresSink().write(
+                events,
+            connection_string="dbname=dpi user=postgres password=secret host=localhost port=5432",
+            table="network_events",
+            )
+            print(f"\nPostgreSQL: {len(events)} rows written to 'network_events'.")
+    except ImportError:
+        pass  # PostgresSink not installed — DPI + Phases 1-2 unaffected
+
+    # Phase 4: Kafka — publish events as JSON messages for streaming consumers.
+    # Guarded so the DPI pipeline still runs when kafka-python is missing.
+    try:
+        from src.data_engineering.kafka_sink import KafkaSink
+
+        if os.getenv('DPI_SKIP_EXTERNAL_SINKS') != '1':
+            KafkaSink().publish(events, topic='network_events')
+            print(f"\nKafka: {len(events)} events published to 'network_events'.")
+    except ImportError:
+        pass  # KafkaSink not installed — DPI + Phases 1-3 unaffected
+
+    # Phase 5: Airflow hook — the DAG is defined in airflow_dag.py and picked up
+    # by the scheduler. When Airflow is missing, DAG is None — no effect here.
+    try:
+        from src.data_engineering.airflow_dag import DAG as _AirflowDAG
+
+        if _AirflowDAG is not None:
+            print("\nAirflow DAG 'dpi_data_engineering_pipeline' registered.")
+    except ImportError:
+        pass  # Airflow not installed — DPI + Phases 1-4 unaffected
+
+    # ============================================================
     # V2 MULTI-THREADED DPI PIPELINE
     # ==========================================
 
@@ -217,7 +337,7 @@ def main():
     print("==========================================")
 
     v2_pipeline = V2Pipeline(
-        file_path=args.input,
+        file_path=v2_input_path,
         output_path=args.output,
         worker_count=args.workers,
         blocked_ips=args.block_ip,
@@ -262,3 +382,11 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
+
+
+
+
+
+
