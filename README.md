@@ -17,7 +17,9 @@ This document explains **everything** about this project - from basic networking
 9. [How Blocking Works](#9-how-blocking-works)
 10. [Building and Running](#10-building-and-running)
 11. [Understanding the Output](#11-understanding-the-output)
-12. [Extending the Project](#12-extending-the-project)
+12. [Data Engineering Pipeline](#12-data-engineering-pipeline)
+13. [Live Packet Capture](#13-live-packet-capture)
+14. [Extending the Project](#14-extending-the-project)
 
 ---
 
@@ -162,6 +164,8 @@ TLS Client Hello:
 
 Both versions run in a single `python main.py` invocation, over the same input file, so their results can be compared side by side.
 
+The full pipeline also writes structured data via the data engineering layer (Phases 1-5), see Section 12 for details. Live capture mode (real-time packet capture via Npcap) is available with the `--live` flag, see Section 13.
+
 ---
 
 ## 4. File Structure
@@ -187,12 +191,27 @@ Packet_Analyzer_Python/
 │   ├── dpi_processor.py           # Per-worker DPI unit (reuses V1 parts)
 │   └── pipeline.py                # ★ V2 ORCHESTRATOR ★
 │
-├── tests/                          # 30 test modules (V1 + V2)
+├── src/data_engineering/           # Data Engineering Pipeline (Phases 1-5)
+│   ├── __init__.py
+│   ├── emitter.py                 # DPI events → structured records
+│   ├── parquet_sink.py            # Write events to Parquet (PyArrow)
+│   ├── pyspark_etl.py             # Spark ETL on Parquet events
+│   ├── postgres_sink.py           # Persist events to PostgreSQL
+│   ├── kafka_sink.py              # Publish events to Kafka
+│   ├── airflow_dag.py             # Airflow DAG: dpi_data_engineering_pipeline
+│   └── events.py                  # Shared event schema/dataclasses
+│
+├── src/live_capture.py             # Real-time capture via Npcap/Scapy
+│
+├── tests/                          # 40+ test modules (V1 + V2 + DE + Live)
 ├── input/test_dpi.pcap             # Sample capture (77 packets)
-├── output/                         # Filtered captures land here
+├── output/                         # Filtered captures, Parquet, Spark output
 ├── generate_test_pcap.py           # Creates reproducible test data
-├── main.py                         # CLI entry point (runs V1 then V2)
-├── requirements.txt                # scapy
+├── main.py                         # CLI entry point (runs V1 then V2, + --live)
+├── requirements.txt                # scapy, pyarrow, pyspark, psycopg2, kafka-python, airflow
+├── Dockerfile.airflow              # Custom Airflow image (libpq + providers)
+├── docker-compose.yml              # PostgreSQL, Kafka (KRaft), Airflow
+├── docker/                         # Airflow init scripts
 └── README.md                       # This file!
 ```
 
@@ -1305,6 +1324,12 @@ python main.py --workers 8
 | `--block-ip` | `10.0.0.50` | Block a source IP (repeatable) |
 | `--block-domain` | 4 suspicious domains | Block a domain (repeatable) |
 | `--block-app` | `FACEBOOK` | Block an application (repeatable) |
+| `--live` | — | Capture live via Npcap/Scapy instead of reading PCAP |
+| `--interface` | — | Network interface name/index/NDIS path for live capture |
+| `--timeout` | `10` | Seconds to sniff in live mode (`0` = no timeout) |
+| `--filter` | — | BPF expression, e.g. `tcp port 443` |
+| `--stop-after` | — | Stop after this many packets in live mode |
+| `--pcap-save` | — | Save captured live packets to this PCAP path |
 
 ### Running the Tests
 
@@ -1482,7 +1507,158 @@ The blocked packet is the Facebook Client Hello. Both captures open in Wireshark
 
 ---
 
-## 12. Extending the Project
+## 12. Data Engineering Pipeline
+
+After the DPI engines (V1 + V2) classify and filter packets, `main.py` emits structured network events into a 5-phase data engineering pipeline. Each phase is guarded with `try/except ImportError`, so the DPI reports always complete even when a downstream dependency is missing.
+
+### Architecture
+
+```
+                    ┌─────────────────────────────────────────┐
+                    │            main.py (DPI)                │
+                    │  V1 + V2 engines classify & filter      │
+                    │  ┌─ parsed_packets[]                     │
+                    │  └─ decisions[] (DROP/FORWARD)           │
+                    └──────────────────┬──────────────────────┘
+                                       │
+              ┌────────────────────────┼────────────────────────┐
+              │                        │                        │
+   Phase 1:   ▼                        │         Phase 5:       ▼
+   Parquet    ┌──────────────┐         │         Airflow        ┌──────────────┐
+   (PyArrow)  │ ParquetSink  │         │         (airflow_dag)  │ DAG Register │
+              │ .write()     │         │         .validate()    │ scheduler    │
+              └──────┬───────┘         │         detect         └──────────────┘
+                     │ events          │         availability
+   Phase 2:          ▼                 │
+   PySpark ETL       ┌──────────────┐  │
+   (pyspark)         │ NetworkEventETL│  │
+                     │ .run()         │  │
+                     └──────┬───────┘  │
+                            │ output  │
+   Phase 3:          ┌──────▼───────┐  │
+   PostgreSQL        │ PostgresSink │  │
+   (psycopg2)        │ .write()       │  │
+                     └──────┬───────┘  │
+                            │ rows    │
+   Phase 4:      ┌──────────▼─┐       │
+   Kafka         │ KafkaSink  │◄──────┘
+   (kafka-python)│ .publish() │
+                 └────────────┘
+```
+
+### Phases
+
+| Phase | Module | Stack | Output | Purpose |
+|-------|--------|-------|--------|---------|
+| 1 | `parquet_sink.py` | PyArrow | `output/network_events.parquet` | Columnar storage for batch queries |
+| 2 | `pyspark_etl.py` | PySpark | `output/pyspark_etl_output/` | Distributed transformation & aggregation |
+| 3 | `postgres_sink.py` | psycopg2 | `PostgreSQL: network_events` table | Relational persistence, SQL analytics |
+| 4 | `kafka_sink.py` | kafka-python | `network_events` topic | Streaming events to downstream consumers |
+| 5 | `airflow_dag.py` | Apache Airflow | Scheduler | Orchestration DAG for batch re-runs |
+
+### Docker Compose Services
+
+The `docker-compose.yml` provides a full local stack:
+
+| Service | Image | Role |
+|---------|-------|------|
+| `postgres` | `postgres:16` | Stores `network_events` table with 847+ rows verified |
+| `kafka` | Bitnami Kafka (KRaft mode) | Publishes/subscribes to `network_events` topic (385 messages verified) |
+| `airflow-init` | Custom `Dockerfile.airflow` | Bootstraps Airflow DB + creates connection pool |
+| `airflow-scheduler` | Apache Airflow 2.10.0 | Runs `dpi_data_engineering_pipeline` DAG (4 tasks passing) |
+| `airflow-webserver` | Apache Airflow 2.10.0 | Web UI at `localhost:8080` |
+
+### Running the Stack
+
+```bash
+docker-compose up -d
+```
+
+Once services are healthy, the DAG `dpi_data_engineering_pipeline` appears in the Airflow UI with tasks:
+1. `create_schema` — creates `network_events` table
+2. `parquet_to_dataframe` — reads Parquet with PySpark
+3. `transform_and_clean` — filtering & aggregation
+4. `load_to_postgres` — writes results to PostgreSQL
+
+---
+
+## 13. Live Packet Capture
+
+The engine supports **real-time packet capture** via Npcap (Windows) or libpcap (Linux/macOS), bridging directly into the DPI pipeline.
+
+### Usage
+
+```bash
+# Capture live traffic for 10 seconds (default)
+python main.py --live
+
+# Capture on a specific interface
+python main.py --live --interface "Ethernet"
+
+# Capture with a BPF filter and packet limit
+python main.py --live --filter "tcp port 443" --stop-after 50
+
+# Save the raw capture to disk
+python main.py --live --pcap-save output/live_capture.pcap
+```
+
+### How It Works
+
+```
+                    ┌──────────────────────────────────────┐
+                    │     Live Packet Capture              │
+                    │                                      │
+                    │  Npcap/Scapy → LivePacketCapture     │
+                    │       ├─ sniff() → packets[]         │
+                    │       └─ wrpcap() → temp PCAP        │
+                    └──────────────────┬─────────────────┘
+                                       │
+                                       ▼
+                    ┌──────────────────────────────────────┐
+                    │     V1 + V2 DPI Engines              │
+                    │     (same as offline mode)           │
+                    └──────────────────┬─────────────────┘
+                                       │
+                                       ▼
+                    ┌──────────────────────────────────────┐
+                    │     Data Engineering (Phases 1-5)    │
+                    └──────────────────────────────────────┘
+```
+
+The `--live` flag replaces the PCAP file reader with `LivePacketCapture.sniff()`, writes captured packets to a temporary PCAP (via `tempfile.mkstemp`), and then feeds that path into `V2Pipeline` — the same code path as offline mode. This means **every block/report/output feature works identically** in live mode.
+
+### Requirements
+
+- **Windows**: Npcap installed (WinPcap API-compatible mode)
+- **Linux/macOS**: libpcap installed (`apt install libpcap-dev` or `brew install libpcap`)
+- Scapy 2.4.3+
+
+### Interface Resolution (Windows)
+
+On Windows, `src/live_capture.py` handles `NetworkInterface_Win` objects which expose `mac` (not `hwaddr`) and lack an `isloopback` attribute. The engine includes defensive helpers:
+
+```python
+@staticmethod
+def _is_loopback(iface_info) -> bool:
+    try:
+        if iface_info.isloopback:
+            return True
+    except AttributeError:
+        pass
+    return "loopback" in str(iface_info.name).lower() or \
+           "loopback" in str(iface_info.description).lower()
+
+@staticmethod
+def _get_hwaddr(iface_info) -> str:
+    hw = getattr(iface_info, "mac", None)
+    if not hw:
+        hw = getattr(iface_info, "hwaddr", None)
+    return hw or ""
+```
+
+---
+
+## 14. Extending the Project
 
 ### Ideas for Improvement
 
